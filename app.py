@@ -974,6 +974,9 @@ def _dialogo_senha():
 
 def _barra_acesso():
     """Cadeado discreto no fim da barra lateral. Chamar após montar a página."""
+    if db.modo_demonstracao():
+        st.sidebar.caption("Demonstração · somente consulta")
+        return
     st.sidebar.divider()
     liberado = bool(st.session_state.get("lanc_ok"))
     if st.sidebar.button("🔓" if liberado else "🔒", key="btn_cadeado",
@@ -1012,13 +1015,16 @@ def label_mes(d):
 
 def pagina_lancamento():
     # Trava redundante ao menu: garante que a página não renderize sem senha.
-    if not st.session_state.get("lanc_ok"):
+    if not db.modo_demonstracao() and not st.session_state.get("lanc_ok"):
         st.error("Área restrita. Libere o acesso no cadeado da barra lateral.")
         return
     st.title("📝 Lançamento de dados")
     st.caption("Informe Passagens e Refis por consultor. O faturamento é calculado "
                "automaticamente a partir das quantidades.")
-    st.info("Lançamentos desta tela alteram apenas o banco conectado. A próxima importação substituirá esses valores pela planilha; mantenha o Excel atualizado.")
+    if db.modo_demonstracao():
+        st.info("Prévia do lançamento: você pode explorar os cálculos. Salvar e excluir ficam disponíveis após conectar o banco.")
+    else:
+        st.info("Lançamentos desta tela alteram apenas o banco conectado. A próxima importação substituirá esses valores pela planilha; mantenha o Excel atualizado.")
 
     unidades = db.listar_unidades()
     if not unidades:
@@ -1037,6 +1043,8 @@ def pagina_lancamento():
     cons = cons_por_nome[nome_cons]
 
     meses = meses_recentes(6)
+    if db.modo_demonstracao():
+        meses = sorted({pd.Timestamp(m).date() for m in db.ler_base_tidy()["mes"]}, reverse=True)
     mes_por_label = {label_mes(d): d for d in meses}
     label_sel = st.selectbox("Mês de referência", list(mes_por_label.keys()))
     mes = mes_por_label[label_sel]
@@ -1078,7 +1086,7 @@ def pagina_lancamento():
         st.warning("Passagens está zerado, mas há refis informados. Confira.")
 
     st.divider()
-    if st.button("Salvar lançamento", type="primary", width="stretch"):
+    if st.button("Salvar lançamento", type="primary", width="stretch", disabled=db.modo_demonstracao()):
         try:
             db.salvar_lancamento(cons["id"], mes, uni["id"], int(passagens), int(refil_d), int(refil_t))
         except Exception:
@@ -1096,7 +1104,7 @@ def pagina_lancamento():
                        "Para apenas corrigir um valor, basta editar acima e salvar. "
                        "A exclusão fica registrada em 🗂️ Histórico.")
             ok = st.checkbox("Confirmo que quero excluir", key=f"conf_{chave}")
-            if st.button("Excluir lançamento", disabled=not ok, key=f"del_{chave}"):
+            if st.button("Excluir lançamento", disabled=db.modo_demonstracao() or not ok, key=f"del_{chave}"):
                 try:
                     db.excluir_lancamento(cons["id"], mes, uni["id"])
                 except Exception:
@@ -1243,6 +1251,10 @@ def _historico_indisponivel(erro):
 
 
 def pagina_historico():
+    if db.modo_demonstracao():
+        st.title("🗂️ Histórico de lançamentos")
+        st.info("O histórico será registrado após conectar o banco e importar os dados. A planilha de demonstração contém apenas os valores atuais, sem eventos anteriores.")
+        return
     # Trava redundante ao menu: garante que a página não renderize sem senha.
     if not st.session_state.get("lanc_ok"):
         st.error("Área restrita. Libere o acesso no cadeado da barra lateral.")
@@ -1641,8 +1653,10 @@ def pagina_relatorio_consultor():
 _injetar_css()
 mostrar_logo()
 st.sidebar.caption("INTELIGÊNCIA COMERCIAL · GRUPO SAGA")
-if CONFIG.get("app", {}).get("dados_ficticios", True):
+if db.modo_demonstracao() or CONFIG.get("app", {}).get("dados_ficticios", True):
     st.sidebar.info("Base de demonstração · dados fictícios")
+if db.modo_demonstracao():
+    st.sidebar.caption("Fonte: planilha de demonstração")
 st.sidebar.caption("Comissões não configuradas")
 if st.sidebar.button("Atualizar visualização", width="stretch"):
     st.cache_data.clear()
@@ -1657,7 +1671,7 @@ except Exception:
 # Normalização ANTES do menu: com o widget key="menu_pagina" já criado, escrever
 # em st.session_state["menu_pagina"] levanta StreamlitAPIException.
 _ir_para_lanc = st.session_state.pop("lanc_ir", False)
-_liberado = _revalidar_acesso()
+_liberado = db.modo_demonstracao() or _revalidar_acesso()
 if _liberado and _ir_para_lanc:
     st.session_state["menu_pagina"] = PAG_LANCAMENTO
 elif not _liberado and st.session_state.get("menu_pagina") in PAGINAS_RESTRITAS:

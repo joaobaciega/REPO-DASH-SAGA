@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS consultor_unidade (
   PRIMARY KEY (consultor_id, unidade_id),
   FOREIGN KEY (consultor_id) REFERENCES consultores(id),
   FOREIGN KEY (unidade_id) REFERENCES unidades(id)
-) ENGINE=InnoDB;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 CREATE TABLE IF NOT EXISTS lancamentos (
   consultor_id CHAR(64) NOT NULL, unidade_id CHAR(64) NOT NULL, mes DATE NOT NULL,
   gerente VARCHAR(180), passagens INT UNSIGNED NULL,

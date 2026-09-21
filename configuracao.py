@@ -20,7 +20,17 @@ def ler_config():
     try:
         return st.secrets.to_dict()
     except FileNotFoundError:
-        raise ValueError("Copie .streamlit/secrets.toml.example para secrets.toml e configure a conexão.") from None
+        return {"app": {"destino": "demo", "dados_ficticios": True}}
+
+
+def destino_app():
+    cfg = ler_config()
+    destino = cfg.get("app", {}).get("destino")
+    if destino is None:
+        destino = "local" if "mysql" in cfg else "online" if "mysql_online" in cfg else "demo"
+    if destino not in ("local", "online", "demo"):
+        raise ValueError("Destino do dashboard inválido: use local, online ou demo.")
+    return destino
 
 
 def destinos(filtro=None):
