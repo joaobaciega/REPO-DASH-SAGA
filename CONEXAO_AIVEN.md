@@ -57,7 +57,8 @@ O modo atual do dashboard foi preservado. A carga online foi executada; a troca
 dos Secrets do Streamlit de `demo` para `online` é uma etapa separada e ainda
 não foi realizada nesta operação.
 
-`.streamlit/secrets.toml` e `certs/` já estão excluídos pelo `.gitignore` local.
+`.streamlit/secrets.toml` e os demais arquivos de `certs/` estão excluídos pelo
+`.gitignore`. O certificado público `certs/ca.pem` é a exceção e deve acompanhar
+o repositório para o aplicativo publicado conseguir abrir a conexão TLS.
 Para o Streamlit Cloud, forneça as credenciais pelo campo Secrets e disponibilize
-o certificado CA no caminho configurado; esse arquivo não é enviado
-automaticamente ao GitHub enquanto a pasta estiver ignorada.
+o certificado CA no caminho configurado.

@@ -34,6 +34,10 @@ e execute `python atualizar_base.py --destino online` para criar as tabelas e
 carregar os dados. O certificado CA deve estar disponível no caminho configurado
 em `ssl_ca`, tanto localmente quanto no projeto publicado.
 
+O certificado público `certs/ca.pem` acompanha o repositório para o Streamlit
+Cloud estabelecer a conexão TLS. O `.gitignore` permite esse arquivo específico
+e continua excluindo secrets e quaisquer outros arquivos de `certs/`.
+
 Em **Settings → Secrets** do aplicativo publicado, troque `destino = "demo"`
 por `"online"` e adicione os blocos `[mysql_online]` e `[acesso]`. Reinicie o app
 após a troca. Altere `dados_ficticios` para `false` somente quando substituir a

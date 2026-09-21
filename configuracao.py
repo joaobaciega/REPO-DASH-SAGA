@@ -11,6 +11,27 @@ BASE_DIR = Path(__file__).resolve().parent
 SECRETS = BASE_DIR / ".streamlit" / "secrets.toml"
 
 
+class CertificadoAusenteError(ValueError):
+    """Arquivo CA configurado não está no pacote publicado."""
+
+
+def mensagem_erro_conexao(exc):
+    """Diagnóstico publicável: nunca inclui senha, URL ou parâmetros SQL."""
+    if isinstance(exc, CertificadoAusenteError):
+        return ("O certificado CA não foi encontrado no aplicativo publicado. "
+                "Inclua certs/ca.pem no repositório e confira ssl_ca nos Secrets.")
+    original = getattr(exc, "orig", exc)
+    argumentos = getattr(original, "args", ())
+    codigo = argumentos[0] if argumentos and isinstance(argumentos[0], int) else None
+    mensagens = {
+        1045: "O Aiven recusou as credenciais. Confira usuário e senha em [mysql_online] nos Secrets.",
+        1049: "O banco configurado não existe nesse serviço. Confira database nos Secrets.",
+        1146: "As tabelas do dashboard não foram encontradas nesse banco. Confira database e execute a carga online.",
+        2003: "Não foi possível estabelecer a conexão com o Aiven. Confira host, porta, certificado e acesso de rede.",
+    }
+    return mensagens.get(codigo, "Não foi possível acessar os dados. Confira a configuração do banco e do certificado nos Secrets.")
+
+
 def ler_config():
     if SECRETS.exists():
         with SECRETS.open("rb") as arquivo:
@@ -59,7 +80,7 @@ def criar_engine(cfg, *, sem_banco=False, online=False):
             if not caminho.is_absolute():
                 caminho = BASE_DIR / caminho
             if not caminho.is_file():
-                raise ValueError("Certificado CA não encontrado. Confira ssl_ca nas configurações.")
+                raise CertificadoAusenteError("Certificado CA não encontrado. Confira ssl_ca nas configurações.")
             args["ssl"] = ssl.create_default_context(cafile=str(caminho))
         else:
             args["ssl"] = ssl.create_default_context()

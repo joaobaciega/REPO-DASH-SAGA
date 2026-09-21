@@ -1,9 +1,10 @@
 .streamlit/secrets.toml
-certs/
+# Public CA needed by Streamlit Cloud; other certificate/key files stay local.
+certs/*
+!certs/ca.pem
 backups/
 logs/
 __pycache__/
 .pytest_cache/
 .venv/
 *.pyc
-

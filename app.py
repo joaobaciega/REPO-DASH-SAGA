@@ -18,6 +18,7 @@ Como rodar (na pasta do projeto, com .streamlit/secrets.toml configurado):
 import datetime as dt
 import hmac
 import io
+import logging
 import time
 from pathlib import Path
 
@@ -27,7 +28,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 import db
-from configuracao import ler_config
+from configuracao import ler_config, mensagem_erro_conexao
 
 CONFIG = ler_config()
 
@@ -298,13 +299,18 @@ def gerar_excel_ranking(f, periodo, filtros_txt):
 
 
 # ============================ PÁGINA: DASHBOARD ============================
+def _mostrar_erro_dados(erro):
+    mensagem = mensagem_erro_conexao(erro)
+    logging.getLogger("saga.conexao").error("%s [%s]", mensagem, type(erro).__name__)
+    st.error(mensagem)
+
+
 def pagina_dashboard():
     st.title("📊 Análise de Vendas — Saga")
     try:
         df = db.ler_base_tidy()
-    except Exception:
-        st.error("Não foi possível conectar ao banco de dados no momento. "
-                 "Verifique se o MySQL está ativo e tente novamente.")
+    except Exception as erro:
+        _mostrar_erro_dados(erro)
         return
 
     if df.empty:
@@ -692,9 +698,7 @@ def pagina_verbas():
         pagos = db.ler_pagamentos_verba()
         mkt_pagos = db.ler_pagamentos_marketing()
     except Exception as e:
-        st.error("Não foi possível conectar ao banco de dados no momento. "
-                 "Verifique se o MySQL está ativo e tente novamente.")
-        st.caption(f"Detalhe técnico: {type(e).__name__}: {e}")
+        _mostrar_erro_dados(e)
         return
 
     if df.empty and not mkt_pagos:
@@ -1245,7 +1249,7 @@ def gerar_excel_historico(h, filtros_txt):
 
 def _historico_indisponivel(erro):
     if erro is not None:
-        st.error("Não foi possível consultar o histórico. Confira a conexão com o banco.")
+        _mostrar_erro_dados(erro)
     else:
         st.info("Nenhuma alteração registrada ainda. As importações e os lançamentos alimentarão este histórico.")
 
@@ -1431,9 +1435,8 @@ def pagina_relatorio_semanal():
     st.caption("Ranking das unidades no mês, no formato do relatório da diretoria.")
     try:
         df = db.ler_base_tidy()
-    except Exception:
-        st.error("Não foi possível conectar ao banco de dados no momento. "
-                 "Verifique se o MySQL está ativo e tente novamente.")
+    except Exception as erro:
+        _mostrar_erro_dados(erro)
         return
     if df.empty or df["mes"].dropna().empty:
         st.info("Ainda não há lançamentos no banco.")
@@ -1582,9 +1585,8 @@ def pagina_relatorio_consultor():
     st.caption("Ranking dos consultores no mês. Comissões aguardando definição da Saga.")
     try:
         df = db.ler_base_tidy()
-    except Exception:
-        st.error("Não foi possível conectar ao banco de dados no momento. "
-                 "Verifique se o MySQL está ativo e tente novamente.")
+    except Exception as erro:
+        _mostrar_erro_dados(erro)
         return
     if df.empty or df["mes"].dropna().empty:
         st.info("Ainda não há lançamentos no banco.")
