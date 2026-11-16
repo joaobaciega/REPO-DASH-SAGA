@@ -89,6 +89,42 @@ def listar_consultores(unidade_id):
                 "WHERE cu.unidade_id=:uid ORDER BY c.nome", {"uid": unidade_id}).to_dict("records")
 
 
+def configuracao_base():
+    registros = (_demo()['base_config'] if modo_demonstracao()
+                 else _ler('SELECT chave, valor FROM base_config').to_dict('records'))
+    return {r['chave']: r['valor'] for r in registros}
+
+
+def ler_equipe():
+    if modo_demonstracao():
+        base = _demo()
+        unidades = {u['id']: u for u in base['unidades']}
+        return pd.DataFrame([dict(r, unidade=unidades[r['unidade_id']]['nome_exibicao'])
+                             for r in base['equipe']])
+    return _ler('SELECT e.*, u.nome_exibicao AS unidade FROM equipe e '
+                'JOIN unidades u ON u.id=e.unidade_id ORDER BY unidade, cargo, nome')
+
+
+def ler_comissoes_equipe():
+    if modo_demonstracao():
+        base = _demo()
+        equipe = {(r['cargo'], r['pessoa_id'], r['unidade_id']): r for r in base['equipe']}
+        unidades = {u['id']: u for u in base['unidades']}
+        cols = ['cargo', 'pessoa_id', 'unidade_id', 'mes', 'refil_diant', 'refil_tras',
+                'verba_diant', 'verba_tras', 'nome', 'unidade']
+        df = pd.DataFrame([dict(r, nome=equipe[r['cargo'], r['pessoa_id'], r['unidade_id']]['nome'],
+             unidade=unidades[r['unidade_id']]['nome_exibicao']) for r in base['comissoes_equipe']], columns=cols)
+    else:
+        df = _ler('SELECT c.*, e.nome, u.nome_exibicao AS unidade FROM comissoes_equipe c '
+                  'JOIN equipe e ON e.cargo=c.cargo AND e.pessoa_id=c.pessoa_id AND e.unidade_id=c.unidade_id '
+                  'JOIN unidades u ON u.id=c.unidade_id')
+    df['mes'] = pd.to_datetime(df['mes'])
+    for col in ('verba_diant', 'verba_tras'):
+        df[col] = df[col].astype(float)
+    df['total'] = df['refil_diant'] * df['verba_diant'] + df['refil_tras'] * df['verba_tras']
+    return df
+
+
 def obter_lancamento(consultor_id, mes, unidade_id):
     if modo_demonstracao():
         for r in _demo()["lancamentos"]:
@@ -173,9 +209,26 @@ def _gravar(consultor_id, mes, unidade_id, passagens, refil_diant, refil_tras, *
             from planilha import numero
             for campo in ("passagens", "refil_diant", "refil_tras"):
                 f[campo] = numero(f[campo], campo, inteiro=True, opcional=campo == "passagens")
+            somente_dianteiro = conn.execute(text("SELECT valor FROM base_config WHERE chave='somente_dianteiro'")).scalar()
+            if somente_dianteiro == 'sim' and f['refil_tras']:
+                raise ValueError('A Saga está configurada para vender somente refis dianteiros.')
+        # Não permita diminuir vendas abaixo das atribuições já registradas dos técnicos.
+        outros = conn.execute(text('SELECT COALESCE(SUM(refil_diant),0), COALESCE(SUM(refil_tras),0) '
+            'FROM lancamentos WHERE unidade_id=:uid AND mes=:mes AND consultor_id<>:cid'), parametros).one()
+        atribuidos = conn.execute(text("SELECT COALESCE(SUM(refil_diant),0), COALESCE(SUM(refil_tras),0) "
+            "FROM comissoes_equipe WHERE cargo='técnico' AND unidade_id=:uid AND mes=:mes"), parametros).one()
+        novos = (0, 0) if excluir else (f['refil_diant'], f['refil_tras'])
+        if any(a > o + n for a, o, n in zip(atribuidos, outros, novos)):
+            raise ValueError('Existem refis atribuídos aos técnicos neste mês. Ajuste vendas e comissões na planilha e importe novamente.')
         conn.execute(text("DELETE FROM lancamentos WHERE consultor_id=:cid AND unidade_id=:uid AND mes=:mes"), parametros)
         if not excluir:
             inserir(conn, "lancamentos", [f])
+            conn.execute(text("UPDATE comissoes_equipe SET refil_diant=:nd, refil_tras=:nt "
+                "WHERE cargo='consultor' AND pessoa_id=:cid AND unidade_id=:uid AND mes=:mes"),
+                dict(parametros, nd=f['refil_diant'], nt=f['refil_tras']))
+        else:
+            conn.execute(text("DELETE FROM comissoes_equipe WHERE cargo='consultor' "
+                "AND pessoa_id=:cid AND unidade_id=:uid AND mes=:mes"), parametros)
         inserir(conn, "lancamentos_historico", [evento(f, {unidade_id:u}, {consultor_id:c}, "app", str(uuid.uuid4()), excluido=excluir)])
     st.cache_data.clear()
 

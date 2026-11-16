@@ -10,7 +10,8 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 TABELAS = ("unidades", "consultores", "consultor_unidade", "lancamentos",
-           "vendas_verbas", "verbas_pagamentos", "verbas_marketing_pagos")
+           "vendas_verbas", "verbas_pagamentos", "verbas_marketing_pagos",
+           "equipe", "comissoes_equipe", "base_config")
 
 
 def identificador(*partes):
@@ -180,6 +181,8 @@ def ler_planilha(caminho):
             for uid in sorted({u for m, u in itens if m == ultimo}):
                 tabelas["consultor_unidade"].append(dict(consultor_id=cid, unidade_id=uid))
         ler_verbas(wb, tabelas, avisos)
+        from equipe import ler_equipe
+        ler_equipe(wb, tabelas)
         return Base(tabelas, avisos, hashlib.sha256(conteudo).hexdigest(), caminho.name)
     finally:
         wb.close()

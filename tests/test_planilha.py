@@ -9,7 +9,7 @@ from planilha import ler_planilha, numero
 
 
 def alterada(tmp_path, editar):
-    wb = load_workbook(BASE_DIR / "BASE GRUPO SAGA.xlsx")
+    wb = load_workbook(BASE_DIR / "tests" / "fixtures" / "base_ficticia.xlsx")
     editar(wb)
     p = tmp_path / "teste.xlsx"
     wb.save(p)
@@ -18,7 +18,7 @@ def alterada(tmp_path, editar):
 
 
 def test_base_e_totais_de_gerentes_com_datas():
-    base = ler_planilha(BASE_DIR / "BASE GRUPO SAGA.xlsx")
+    base = ler_planilha(BASE_DIR / "tests" / "fixtures" / "base_ficticia.xlsx")
     assert base.faturamento == Decimal("2275.00")
     assert len(base.tabelas["lancamentos"]) == 6
     assert sum(r["passagens"] for r in base.tabelas["lancamentos"]) == 428

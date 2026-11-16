@@ -30,6 +30,23 @@ CREATE TABLE IF NOT EXISTS lancamentos (
   FOREIGN KEY (unidade_id) REFERENCES unidades(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+CREATE TABLE IF NOT EXISTS equipe (
+  cargo VARCHAR(20) NOT NULL, pessoa_id CHAR(64) NOT NULL, unidade_id CHAR(64) NOT NULL,
+  nome VARCHAR(180) NOT NULL,
+  PRIMARY KEY (cargo, pessoa_id, unidade_id),
+  FOREIGN KEY (unidade_id) REFERENCES unidades(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+CREATE TABLE IF NOT EXISTS comissoes_equipe (
+  cargo VARCHAR(20) NOT NULL, pessoa_id CHAR(64) NOT NULL, unidade_id CHAR(64) NOT NULL,
+  mes DATE NOT NULL, refil_diant INT UNSIGNED NOT NULL, refil_tras INT UNSIGNED NOT NULL,
+  verba_diant DECIMAL(12,2) NOT NULL, verba_tras DECIMAL(12,2) NOT NULL,
+  PRIMARY KEY (cargo, pessoa_id, unidade_id, mes),
+  FOREIGN KEY (cargo, pessoa_id, unidade_id) REFERENCES equipe(cargo, pessoa_id, unidade_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+CREATE TABLE IF NOT EXISTS base_config (
+  chave VARCHAR(50) PRIMARY KEY, valor VARCHAR(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS lancamentos_historico (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   consultor_id CHAR(64) NOT NULL, unidade_id CHAR(64) NOT NULL, mes DATE NOT NULL,

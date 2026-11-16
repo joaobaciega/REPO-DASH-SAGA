@@ -41,11 +41,11 @@ def test_substituicao_idempotencia_exclusao_e_rollback(eng):
             assert substituir(conn, nova, str(uuid.uuid4())) == 1
             ultimo = conn.execute(text("SELECT * FROM vw_lancamentos_historico ORDER BY id DESC LIMIT 1")).mappings().one()
             assert ultimo["tipo"] == "exclusao"
-            assert ultimo["refil_diant_periodo"] == -35
-            assert ultimo["total_periodo"] == -375
-            assert conn.execute(text("SELECT SUM(total_geral) FROM vw_base_tidy")).scalar() == 1900
+            assert ultimo["refil_diant_periodo"] == -2
+            assert ultimo["total_periodo"] == -498
+            assert conn.execute(text("SELECT SUM(total_geral) FROM vw_base_tidy")).scalar() == 1992
             substituir(conn, base, str(uuid.uuid4()))
-            assert conn.execute(text("SELECT SUM(total_periodo) FROM vw_lancamentos_historico")).scalar() == 2275
+            assert conn.execute(text("SELECT SUM(total_periodo) FROM vw_lancamentos_historico")).scalar() == 2490
             raise ReverterTeste()
     with eng.connect() as conn:
         assert ler_estado(conn) == antes
@@ -78,11 +78,17 @@ def test_lancamento_manual_preserva_precos_e_audita_exclusao(eng, monkeypatch):
             monkeypatch.setattr(db, "get_engine", lambda: eng)
             f = dict(conn.execute(text("SELECT * FROM lancamentos LIMIT 1")).mappings().one())
             conn.execute(text("UPDATE unidades SET preco_diant=99 WHERE id=:id"), {"id": f["unidade_id"]})
-            db.salvar_lancamento(f["consultor_id"], f["mes"], f["unidade_id"], 100, 20, 10)
+            db.salvar_lancamento(f["consultor_id"], f["mes"], f["unidade_id"], 100, 20, 0)
             atual = conn.execute(text("SELECT * FROM lancamentos WHERE consultor_id=:cid AND unidade_id=:uid AND mes=:mes"),
                                  dict(cid=f["consultor_id"], uid=f["unidade_id"], mes=f["mes"])).mappings().one()
             assert atual["preco_diant"] == f["preco_diant"]
             assert atual["refil_diant"] == 20
+            comissao = conn.execute(text("SELECT refil_diant, verba_diant FROM comissoes_equipe WHERE cargo='consultor' AND pessoa_id=:cid"), {'cid': f['consultor_id']}).one()
+            assert comissao.refil_diant == 20
+            assert comissao.verba_diant == 12
+            with pytest.raises(ValueError, match='técnicos'):
+                db.excluir_lancamento(f['consultor_id'], f['mes'], f['unidade_id'])
+            conn.execute(text("DELETE FROM comissoes_equipe WHERE cargo='técnico'"))
             db.excluir_lancamento(f["consultor_id"], f["mes"], f["unidade_id"])
             ultimo = conn.execute(text("SELECT * FROM vw_lancamentos_historico ORDER BY id DESC LIMIT 1")).mappings().one()
             assert ultimo["origem"] == "app"

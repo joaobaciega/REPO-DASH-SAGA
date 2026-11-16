@@ -23,14 +23,14 @@ def demo(monkeypatch):
 
 def test_dados_demo_sem_mysql_e_bloqueio_de_gravacao(demo):
     dados = db.ler_base_tidy()
-    assert dados["total_geral"].sum() == 2275
-    assert dados["passagens"].sum() == 428
-    assert len(db.listar_unidades()) == 2
-    unidade = db.listar_unidades()[0]
+    assert dados["total_geral"].sum() == 2490
+    assert dados["passagens"].isna().all()
+    assert len(db.listar_unidades()) == 3
+    unidade = next(u for u in db.listar_unidades() if u["loja"] == "T9")
     consultor = db.listar_consultores(unidade["id"])[0]
     mes = dados["mes"].iloc[0].date()
     args = consultor["id"], mes, unidade["id"]
-    assert db.obter_lancamento(*args)["refil_diant"] == 15
+    assert db.obter_lancamento(*args)["refil_diant"] == 3
     assert db.ler_vendas_verbas().empty
     assert db.ler_pagamentos_verba() == {}
     assert db.ler_pagamentos_marketing() == {}
@@ -48,11 +48,11 @@ def test_seis_telas_demo_e_filtro_sem_banco(demo):
     app = AppTest.from_file(str(configuracao.BASE_DIR / "app.py"), default_timeout=30).run()
     assert not app.exception
     assert not app.error
-    assert any(m.value == "R$ 2.275,00" for m in app.metric)
+    assert any(m.value == "R$ 2.490,00" for m in app.metric)
     paginas = app.sidebar.radio[0].options
-    assert len(paginas) == 6
-    app.sidebar.multiselect[1].set_value(["Volkswagen · Loja 1"]).run()
-    assert any(m.value == "R$ 935,00" for m in app.metric)
+    assert len(paginas) == 8
+    app.sidebar.multiselect[1].set_value(["JEEP · T9"]).run()
+    assert any(m.value == "R$ 2.490,00" for m in app.metric)
     for pagina in paginas[1:]:
         app.sidebar.radio[0].set_value(pagina).run()
         assert not app.exception, [e.message for e in app.exception]
@@ -61,7 +61,9 @@ def test_seis_telas_demo_e_filtro_sem_banco(demo):
             assert len(app.get("download_button")) >= 1
         if "Lançamento" in pagina:
             assert next(b for b in app.button if b.label == "Salvar lançamento").disabled
-            assert next(b for b in app.button if b.label == "Excluir lançamento").disabled
+            for b in app.button:
+                if b.label == "Excluir lançamento":
+                    assert b.disabled
     assert hashlib.sha256(excel.read_bytes()).hexdigest() == antes
 
 

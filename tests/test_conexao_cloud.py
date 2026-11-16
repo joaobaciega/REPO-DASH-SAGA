@@ -59,8 +59,8 @@ def test_streamlit_com_secrets_cloud_e_ca_publicado(monkeypatch, tmp_path):
     app.run()
     assert not app.exception, [e.message for e in app.exception]
     assert not app.error, [e.value for e in app.error]
-    assert any(m.value == "R$ 2.275,00" for m in app.metric)
-    for pagina in ("Relatório Por Gerente", "Relatório Por Consultor", "Verbas"):
+    assert any(m.value == "R$ 2.490,00" for m in app.metric)
+    for pagina in ("Relatório Por Gerente", "Relatório Por Consultor", "Relatório Por Técnico", "Equipe e unidades", "Verbas"):
         app.sidebar.radio[0].set_value(pagina).run()
         assert not app.exception
         assert not app.error

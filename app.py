@@ -58,7 +58,9 @@ PAG_GERENTE = "Relatório Por Gerente"
 PAG_CONSULTOR = "Relatório Por Consultor"
 PAG_LANCAMENTO = "📝 Lançamento"
 PAG_HISTORICO = "🗂️ Histórico"
-PAGINAS_PUBLICAS = [PAG_DASHBOARD, PAG_GERENTE, PAG_CONSULTOR, PAG_VERBAS]
+PAG_TECNICOS = 'Relatório Por Técnico'
+PAG_EQUIPE = 'Equipe e unidades'
+PAGINAS_PUBLICAS = [PAG_DASHBOARD, PAG_GERENTE, PAG_CONSULTOR, PAG_TECNICOS, PAG_VERBAS, PAG_EQUIPE]
 # Páginas que só entram no menu depois da senha (mesmo cadeado, sem senha nova).
 PAGINAS_RESTRITAS = [PAG_LANCAMENTO, PAG_HISTORICO]
 
@@ -337,19 +339,17 @@ def pagina_dashboard():
     # ---- Filtros (sidebar) ----
     st.sidebar.header("Filtros")
     st.sidebar.caption(f"Trimestre vigente: **{periodo}**")
-    marcas = sorted(win["marca"].dropna().unique())
+    cadastro_unidades = db.listar_unidades()
+    marcas = sorted({u['marca'] for u in cadastro_unidades})
     sel_marcas = st.sidebar.multiselect("Marca", marcas, default=[])
 
-    base_uni = win[win["marca"].isin(sel_marcas)] if sel_marcas else win
-    unidades = sorted(base_uni["unidade"].dropna().unique())
+    base_uni = [u for u in cadastro_unidades if not sel_marcas or u['marca'] in sel_marcas]
+    unidades = sorted(u['nome_exibicao'] for u in base_uni)
     sel_unidades = st.sidebar.multiselect("Unidade", unidades, default=[])
 
-    base_cons = win.copy()
-    if sel_marcas:
-        base_cons = base_cons[base_cons["marca"].isin(sel_marcas)]
-    if sel_unidades:
-        base_cons = base_cons[base_cons["unidade"].isin(sel_unidades)]
-    consultores = sorted(base_cons["consultor"].dropna().unique())
+    consultores = sorted({c['nome'] for u in base_uni
+                         if not sel_unidades or u['nome_exibicao'] in sel_unidades
+                         for c in db.listar_consultores(u['id'])})
     sel_cons = st.sidebar.multiselect("Consultor", consultores, default=[])
     st.sidebar.divider()
     st.sidebar.caption("Sem consultor selecionado, mostra o agregado do filtro. "
@@ -686,6 +686,13 @@ def _xlsx_verbas_mes(brutos, ano):
 
 def pagina_verbas():
     st.title("💰 Verbas — Saldo e Pagamentos")
+    from telas_equipe import painel_comissoes
+    try:
+        st.subheader('Comissões da equipe')
+        painel_comissoes()
+    except Exception as erro:
+        _mostrar_erro_dados(erro)
+        return
     # Dois erros diferentes, duas mensagens: tratar tudo como "falha de conexão"
     # já mascarou um deploy em que o app.py novo subiu sem o db.py novo.
     if not hasattr(db, "ler_vendas_verbas") or not hasattr(db, "ler_pagamentos_marketing"):
@@ -702,8 +709,7 @@ def pagina_verbas():
         return
 
     if df.empty and not mkt_pagos:
-        st.info("A planilha atual não contém verbas ou pagamentos. Os valores serão exibidos quando essa base for fornecida.")
-        st.caption("Comissões da Saga ainda não configuradas.")
+        st.info("Ainda não há pedidos, pagamentos ou verbas de marketing informados.")
         return
 
     # ---- Filtro: ano + mês (o mês manda nos cards e no bloco de verbas) ----
@@ -1065,16 +1071,19 @@ def pagina_lancamento():
 
     chave = f"{uni['id']}_{cons['id']}_{mes.isoformat()}"
     st.divider()
+    sem_passagens = st.checkbox('Passagens não informadas', value=existente is not None and existente['passagens'] is None,
+                               key=f'sem_pass_{chave}')
+    somente_dianteiro = db.configuracao_base().get('somente_dianteiro') == 'sim'
     c1, c2, c3 = st.columns(3)
-    passagens = c1.number_input("Passagens", min_value=0, step=1, value=def_pass, key=f"pass_{chave}")
+    passagens = c1.number_input("Passagens", min_value=0, step=1, value=def_pass, key=f"pass_{chave}", disabled=sem_passagens)
     refil_d = c2.number_input("Refil Dianteiro", min_value=0, step=1, value=def_rd, key=f"rd_{chave}")
-    refil_t = c3.number_input("Refil Traseiro", min_value=0, step=1, value=def_rt, key=f"rt_{chave}")
+    refil_t = c3.number_input("Refil Traseiro", min_value=0, step=1, value=def_rt, key=f"rt_{chave}", disabled=somente_dianteiro)
 
     preco_d, preco_t = (existente["preco_diant"], existente["preco_tras"]) if existente else (uni["preco_diant"], uni["preco_tras"])
     tot_d = refil_d * preco_d
     tot_t = refil_t * preco_t
     tot_g = tot_d + tot_t
-    aprov = (refil_d / passagens) if passagens > 0 else None
+    aprov = (refil_d / passagens) if passagens > 0 and not sem_passagens else None
 
     st.subheader("Prévia (calculada)")
     p1, p2, p3 = st.columns(3)
@@ -1086,13 +1095,15 @@ def pagina_lancamento():
 
     if passagens > 0 and refil_d > passagens:
         st.warning("Refil Dianteiro maior que Passagens — o aproveitamento passou de 100%. Confira.")
-    if passagens == 0 and (refil_d > 0 or refil_t > 0):
+    if passagens == 0 and not sem_passagens and (refil_d > 0 or refil_t > 0):
         st.warning("Passagens está zerado, mas há refis informados. Confira.")
 
     st.divider()
     if st.button("Salvar lançamento", type="primary", width="stretch", disabled=db.modo_demonstracao()):
         try:
-            db.salvar_lancamento(cons["id"], mes, uni["id"], int(passagens), int(refil_d), int(refil_t))
+            db.salvar_lancamento(cons["id"], mes, uni["id"], None if sem_passagens else int(passagens), int(refil_d), int(refil_t))
+        except ValueError as erro:
+            st.error(str(erro))
         except Exception:
             st.error("Não foi possível salvar agora. Verifique a conexão com o banco e tente de novo.")
         else:
@@ -1111,6 +1122,8 @@ def pagina_lancamento():
             if st.button("Excluir lançamento", disabled=db.modo_demonstracao() or not ok, key=f"del_{chave}"):
                 try:
                     db.excluir_lancamento(cons["id"], mes, uni["id"])
+                except ValueError as erro:
+                    st.error(str(erro))
                 except Exception:
                     st.error("Não foi possível excluir agora. Verifique a conexão e tente de novo.")
                 else:
@@ -1506,12 +1519,15 @@ def _relatorio_consultor(df, mes_sel):
     g["aprov_t"] = g["aproveitamento_tras"]
     tot_fat = g["total_geral"].sum()
     g["part"] = (g["total_geral"] / tot_fat) if tot_fat else 0.0
-    g["verba"] = g["refil_diant"] * VERBA_DIANT + g["refil_tras"] * VERBA_TRAS
+    comissoes = db.ler_comissoes_equipe()
+    comissoes = comissoes[(comissoes['cargo'] == 'consultor') & (comissoes['mes'] == mes_sel)]
+    valores = {(r.nome, r.unidade): r.total for r in comissoes.itertuples()}
+    g['verba'] = [valores.get((r.consultor, r.unidade), float('nan')) for r in g.itertuples()]
     ov = agg_by(sem.assign(_g=1), "_g").iloc[0].to_dict()
     p = ov["passagens"]
     ov["aprov_d"] = ov["aproveitamento"]
     ov["aprov_t"] = ov["aproveitamento_tras"]
-    ov["verba"] = ov["refil_diant"] * VERBA_DIANT + ov["refil_tras"] * VERBA_TRAS
+    ov['verba'] = g['verba'].sum() if g['verba'].notna().all() else float('nan')
     return g, ov
 
 
@@ -1582,7 +1598,7 @@ def gerar_excel_consultor(g, ov, mes_lbl, ordenar):
 
 def pagina_relatorio_consultor():
     st.title("🧑‍💼 Relatório por Consultor")
-    st.caption("Ranking dos consultores no mês. Comissões aguardando definição da Saga.")
+    st.caption("Ranking dos consultores no mês. Comissões exibidas quando informadas para a unidade e o mês.")
     try:
         df = db.ler_base_tidy()
     except Exception as erro:
@@ -1595,7 +1611,7 @@ def pagina_relatorio_consultor():
     meses = sorted(df["mes"].dropna().unique(), reverse=True)
     mes_por_label = {label_mes(pd.Timestamp(s).date()): s for s in meses}
     TODAS = "Todas as unidades"
-    unidades = [TODAS] + sorted(df["unidade"].dropna().unique())
+    unidades = [TODAS] + [u['nome_exibicao'] for u in db.listar_unidades()]
     c1, c2, c3 = st.columns([2, 2, 1])
     label_sel = c1.selectbox("Mês", list(mes_por_label.keys()))
     unidade_sel = c2.selectbox("Unidade", unidades)
@@ -1637,7 +1653,7 @@ def pagina_relatorio_consultor():
             "% Aprov (D)": fmt_pct(r["aprov_d"]), "Total Diant.": fmt_money(r["total_diant"]),
             "Refil Tras.": fmt_int(r["refil_tras"]), "% Aprov (T)": fmt_pct(r["aprov_t"]),
             "Total Tras.": fmt_money(r["total_tras"]), "Total Geral": fmt_money(r["total_geral"]),
-            "Part %": fmt_pct(r["part"]), "Verba": "Não configurada",
+            "Part %": fmt_pct(r["part"]), "Verba": "Não configurada" if pd.isna(r["verba"]) else fmt_money(r["verba"]),
         })
     linhas.append({
         "Seq": "", "Consultor": "TOTAL", "Unidade": "",
@@ -1645,21 +1661,19 @@ def pagina_relatorio_consultor():
         "% Aprov (D)": fmt_pct(ov["aprov_d"]), "Total Diant.": fmt_money(ov["total_diant"]),
         "Refil Tras.": fmt_int(ov["refil_tras"]), "% Aprov (T)": fmt_pct(ov["aprov_t"]),
         "Total Tras.": fmt_money(ov["total_tras"]), "Total Geral": fmt_money(ov["total_geral"]),
-        "Part %": "100,0%", "Verba": "Não configurada",
+        "Part %": "100,0%", "Verba": "Não configurada" if pd.isna(ov["verba"]) else fmt_money(ov["verba"]),
     })
     st.dataframe(pd.DataFrame(linhas), width="stretch", hide_index=True)
-    st.caption("Comissões não configuradas. Part % = participação do consultor no faturamento do mês.")
+    st.caption("Part % = participação do consultor no faturamento do mês. Comissão não informada permanece sem configuração.")
 
 
 # ============================ NAVEGAÇÃO ============================
 _injetar_css()
 mostrar_logo()
 st.sidebar.caption("INTELIGÊNCIA COMERCIAL · GRUPO SAGA")
-if db.modo_demonstracao() or CONFIG.get("app", {}).get("dados_ficticios", True):
-    st.sidebar.info("Base de demonstração · dados fictícios")
 if db.modo_demonstracao():
-    st.sidebar.caption("Fonte: planilha de demonstração")
-st.sidebar.caption("Comissões não configuradas")
+    st.sidebar.caption("Fonte: planilha · somente consulta")
+st.sidebar.caption("Comissões conforme os resultados informados")
 if st.sidebar.button("Atualizar visualização", width="stretch"):
     st.cache_data.clear()
     st.rerun()
@@ -1691,6 +1705,8 @@ DESTINOS = {
     PAG_LANCAMENTO: pagina_lancamento,
     PAG_HISTORICO: pagina_historico,
 }
+from telas_equipe import pagina_tecnicos, pagina_equipe
+DESTINOS.update({PAG_TECNICOS: pagina_tecnicos, PAG_EQUIPE: pagina_equipe})
 try:
     DESTINOS.get(pagina, pagina_dashboard)()
 finally:
